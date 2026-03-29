@@ -1,0 +1,115 @@
+# ============================================================
+# ACKO Brand Visibility Tracker — GitHub Actions Workflow
+# ============================================================
+#
+# What this file does (plain English):
+# This is the "schedule" for your automation.  GitHub reads this
+# file and automatically runs your Python script every 2 days at
+# 8:00 AM India Standard Time (which is 2:30 AM UTC).
+# You can also start a run manually at any time from the
+# "Actions" tab in your GitHub repository.
+# ============================================================
+
+name: ACKO Brand Visibility Tracker
+
+# ── When to run ──────────────────────────────────────────────
+on:
+
+  # Automatic schedule: every 2 days at 02:30 UTC (08:00 IST)
+  # Cron format: minute  hour  day-of-month  month  day-of-week
+  # */2 in the day-of-month column means "every 2nd day" (1, 3, 5 … 31)
+  schedule:
+    - cron: '30 2 */2 * *'
+
+  # Manual trigger: lets you click "Run workflow" in the Actions tab
+  # without waiting for the next scheduled run.
+  workflow_dispatch:
+    inputs:
+      self_test:
+        description: 'Run in self-test mode? (single prompt, up to 3 retries)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# ── The job ───────────────────────────────────────────────────
+jobs:
+  track-visibility:
+
+    # Use the latest Ubuntu Linux environment provided by GitHub
+    runs-on: ubuntu-latest
+
+    # Don't let a run keep going for more than 30 minutes
+    timeout-minutes: 30
+
+    steps:
+
+      # Step 1 — Download your code onto the GitHub runner machine
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # Plain English: GitHub copies all your project files onto
+        # the temporary computer that will run your script.
+
+      # Step 2 — Install Python 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'   # Cache installed packages to make future runs faster
+        # Plain English: Installs the version of Python your script needs.
+
+      # Step 3 — Install the Python libraries your script depends on
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        # Plain English: Downloads and installs the packages listed in
+        # requirements.txt (openai, gspread, requests, etc.)
+
+      # Step 4 — Run the tracker (full run or self-test based on input)
+      - name: Run brand visibility tracker
+        # Plain English: This passes your secret API keys to the script
+        # as environment variables.  The keys are never shown in the logs.
+        env:
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY:            ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          SPREADSHEET_ID:            ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          # Check if this is a self-test run (triggered manually with self_test=true)
+          if [ "${{ github.event.inputs.self_test }}" = "true" ]; then
+            echo "Running in SELF-TEST mode (single prompt, up to 3 retries)..."
+            python main.py --self-test
+          else
+            echo "Running full 15-prompt tracker..."
+            python main.py
+          fi
+
+      # Step 5 — Save the fallback JSON file as a downloadable artifact
+      #          (only if the file was created — i.e. Google Sheets write failed)
+      - name: Upload fallback output (if Google Sheets write failed)
+        if: always()   # Run this step even if the previous step failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: fallback-run-output
+          path: run_output_fallback.json
+          if-no-files-found: ignore   # Don't fail if the file doesn't exist
+          retention-days: 30
+        # Plain English: If the script couldn't write to Google Sheets,
+        # it saves the data to a JSON file instead.  This step makes that
+        # file downloadable from the Actions run page for 30 days.
+
+      # Step 6 — Print a summary of the run to the Actions log
+      - name: Print run summary
+        if: always()
+        run: |
+          echo "=============================="
+          echo "Run completed at: $(date -u)"
+          echo "=============================="
+          # Show whether the fallback file was created
+          if [ -f run_output_fallback.json ]; then
+            echo "⚠ Fallback JSON was created — Google Sheets write may have failed."
+            echo "  Download 'fallback-run-output' from the Artifacts section of this run."
+          else
+            echo "✓ No fallback file — data was written to Google Sheets successfully."
+          fi
