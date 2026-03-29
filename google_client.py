@@ -25,8 +25,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MODEL         = "gemini-2.0-flash-lite"
-_FALLBACK_MODEL = "gemini-1.5-flash"
+_MODEL         = "gemini-2.0-flash"
+_FALLBACK_MODEL = "gemini-2.5-flash-preview-04-17"
 
 _SYSTEM_PROMPT = (
     "You are a knowledgeable assistant helping Indian consumers understand car insurance. "
