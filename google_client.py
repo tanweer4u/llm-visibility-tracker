@@ -25,7 +25,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MODEL         = "gemini-2.0-flash"
+_MODEL         = "gemini-2.0-flash-lite"
 _FALLBACK_MODEL = "gemini-1.5-flash"
 
 _SYSTEM_PROMPT = (
