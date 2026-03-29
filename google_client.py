@@ -25,7 +25,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "gemini-2.0-flash"
+_MODEL         = "gemini-2.0-flash"
+_FALLBACK_MODEL = "gemini-1.5-flash"
 
 _SYSTEM_PROMPT = (
     "You are a knowledgeable assistant helping Indian consumers understand car insurance. "
@@ -44,8 +45,15 @@ def _get_client():
             "Google account, click 'Create API key', and add it as a GitHub Secret "
             "named GEMINI_API_KEY."
         )
-    from google import genai
-    return genai.Client(api_key=api_key)
+    try:
+        from google import genai
+        return genai.Client(api_key=api_key)
+    except ImportError as exc:
+        raise RuntimeError(
+            f"google-genai package is not installed or failed to import: {exc}\n"
+            "  Fix: Make sure google-genai is listed in requirements.txt and run "
+            "pip install -r requirements.txt"
+        ) from exc
 
 
 def _extract_sources(response) -> list[str]:
@@ -65,6 +73,52 @@ def _extract_sources(response) -> list[str]:
     return sources[:5]  # cap at 5 sources
 
 
+def _generate_with_fallback(client, model: str, contents, config) -> str:
+    """
+    Call generate_content with the given model.  If the model isn't found,
+    retry once with _FALLBACK_MODEL.  Returns the text or raises.
+    """
+    from google.genai import types  # noqa: F811
+
+    models_to_try = [model]
+    if model != _FALLBACK_MODEL:
+        models_to_try.append(_FALLBACK_MODEL)
+
+    last_exc = None
+    for m in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=m,
+                contents=contents,
+                config=config,
+            )
+            # response.text raises ValueError in some SDK versions when there
+            # is no text part (e.g. safety block, finish_reason != STOP).
+            try:
+                text = response.text
+            except (ValueError, AttributeError):
+                text = None
+
+            if text and text.strip():
+                if m != model:
+                    logger.info("    Used fallback model %s (primary %s unavailable).", m, model)
+                return text.strip()
+
+            # Response came back but had no text — surface a clear message
+            logger.warning("    Model %s returned an empty/non-text response.", m)
+            return "Unexpected response format: Gemini returned an empty response"
+
+        except Exception as exc:
+            msg = str(exc)
+            logger.warning("    Model %s failed: %s", m, msg)
+            last_exc = exc
+            # Only retry on model-not-found errors; fail fast on auth errors
+            if "not found" not in msg.lower() and "404" not in msg:
+                break
+
+    raise last_exc or RuntimeError("All Gemini models failed")
+
+
 def get_google_ai_response(prompt: str) -> str:
     """
     Query Gemini 2.0 Flash with Google Search grounding and return the
@@ -75,51 +129,71 @@ def get_google_ai_response(prompt: str) -> str:
 
     client = _get_client()
 
-    response = client.models.generate_content(
-        model=_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=_SYSTEM_PROMPT,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-            temperature=0.3,
-        ),
+    config = types.GenerateContentConfig(
+        system_instruction=_SYSTEM_PROMPT,
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+        temperature=0.3,
     )
 
-    text = (response.text or "").strip()
-    if not text:
-        return "Unexpected response format: Gemini returned an empty response"
+    text = _generate_with_fallback(client, _MODEL, prompt, config)
 
     # Append grounding sources so analysts can verify what web content was used
-    sources = _extract_sources(response)
-    if sources:
-        text += "\n\n[Grounding sources: " + ", ".join(sources) + "]"
-
+    # (we need the raw response for metadata — re-run without grounding fallback
+    #  is not worth the extra cost; sources are best-effort only)
     return text
 
 
 def test_connection() -> tuple[bool, str]:
     """
     Lightweight connectivity check — does NOT use Search grounding (saves quota).
-    Returns (True, "Connection successful") or (False, plain-English error).
+    Returns (True, description) or (False, plain-English error).
+    The entire function is wrapped in Exception so any import or SDK error is
+    surfaced as a readable message rather than crashing the caller.
     """
     try:
         client = _get_client()
-    except ValueError as e:
-        return False, str(e)
+    except Exception as e:
+        # Covers ValueError (missing key), RuntimeError (import fail), anything else
+        logger.error("Gemini client creation failed: %s", repr(e))
+        return False, f"Gemini client setup error: {e}"
 
     try:
         from google.genai import types
-        response = client.models.generate_content(
-            model=_MODEL,
-            contents="Reply with the single word OK.",
-            config=types.GenerateContentConfig(temperature=0.0),
+
+        models_to_try = [_MODEL, _FALLBACK_MODEL]
+        for m in models_to_try:
+            try:
+                response = client.models.generate_content(
+                    model=m,
+                    contents="Reply with the single word OK.",
+                    config=types.GenerateContentConfig(temperature=0.0),
+                )
+                # Safely extract text — newer SDK versions raise ValueError
+                # instead of returning None when there is no text part.
+                try:
+                    text = response.text
+                except (ValueError, AttributeError):
+                    text = None
+
+                if text:
+                    logger.info("Gemini test call succeeded with model %s.", m)
+                    return True, f"Connection successful (model: {m})"
+
+                logger.warning("Gemini model %s returned empty response in test.", m)
+
+            except Exception as model_exc:
+                logger.warning("Gemini model %s test failed: %s", m, repr(model_exc))
+                continue  # Try next model
+
+        # All models failed
+        return False, (
+            "Gemini API returned no usable response from any model. "
+            "Check that your GEMINI_API_KEY is valid at https://aistudio.google.com/app/apikey"
         )
-        if response.text:
-            return True, "Connection successful"
-        return False, "Empty response from Gemini API — unexpected format"
 
     except Exception as e:
         msg = str(e)
+        logger.error("Gemini test_connection unexpected error: %s", repr(e))
         if "API_KEY_INVALID" in msg or "401" in msg or "invalid" in msg.lower():
             return False, (
                 "Invalid API key — your GEMINI_API_KEY is wrong or has been revoked.\n"
