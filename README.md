@@ -1,437 +1,307 @@
-# ACKO Brand Visibility Tracker
+# LLM Brand Visibility Tracker
 
-Automatically tracks how often ACKO and 14 competitor brands appear in AI-generated responses from ChatGPT and Gemini, across 15 car insurance prompts. Runs every 2 days and logs everything to a Google Sheet.
+An automated pipeline that tracks how often **ACKO** and 14 competitor brands appear in AI-generated responses from ChatGPT and Google AI Mode, across 15 high-intent car insurance queries in India.
 
----
+Runs every 2 days on a schedule. Logs all data to a Google Sheets dashboard formatted for executive readability. No manual work required after setup.
 
-## What You Will Need Before You Start
-
-Go through this checklist before doing anything else. Each item has a link to sign up if you don't have it yet.
-
-- [ ] A **Google account** (Gmail) — you almost certainly already have one
-- [ ] An **OpenAI account** — sign up at https://platform.openai.com/signup (free to create; requires ~$5 credit to use GPT-4o)
-- [ ] A **GitHub account** — free, sign up at https://github.com/signup (GitHub is the platform that stores your code and runs the automation)
-- [ ] All the project files on your computer — they should be in a folder called `acko-brand-tracker`
+Built to solve a real problem: most businesses have no affordable way to measure their LLM visibility. Commercial tools for this cost ₹50,000–₹2,00,000/month. This pipeline does the same job for under $10/month in API costs, using a Claude subscription you likely already have.
 
 ---
 
-## What This Project Does
+## What It Does
 
-Every 2 days, this tool automatically:
+Every 2 days, the pipeline runs automatically and:
 
-1. Asks 15 real questions about car insurance in India to **ChatGPT (GPT-4o)**
-2. Asks the same 15 questions to **Google Gemini** (with live Google Search built in, so its answers reflect what's currently on the web)
-3. Scans every response for mentions of ACKO and 14 other insurance brands
-4. Records what changed since the last run (did ACKO appear? did a competitor drop out?)
-5. Writes all data to a **Google Sheet** with 5 organised tabs, including an executive dashboard
-
-You can also run it manually at any time — no waiting for the schedule.
-
----
-
-## What Is GitHub Actions? (Read This First)
-
-**GitHub** is a website that stores code. Think of it like Google Drive, but for code files.
-
-**GitHub Actions** is a feature built into GitHub that can automatically run your Python script on a schedule — without you needing to open your computer or do anything. Here is how it works:
-
-1. You store your project files on GitHub (a "repository")
-2. One of those files — `.github/workflows/tracker.yml` — is a schedule file that tells GitHub: *"every 2 days at 8 AM, run main.py automatically"*
-3. GitHub reads that file, spins up a temporary computer in the cloud, installs Python, runs your script, and then shuts down
-4. You never have to touch anything — it just happens
-
-The only setup you do once is: upload the files, add your API keys as Secrets, and click "Run" once to test it.
+1. **Queries ChatGPT** via the OpenAI API with all 15 prompts and captures the full response
+2. **Queries Google AI Mode** via the Google Custom Search API and extracts AI Overview snippets where available
+3. **Detects brands** in every response, recording which brands appear, in what order, and with what sentiment
+4. **Compares against the previous run** and flags any changes: new brands appearing, ACKO dropping out, position shifts
+5. **Writes everything to Google Sheets** across 5 structured tabs, with the Dashboard tab formatted for C-Suite sharing
+6. **Self-diagnoses** at the start of every run: validates API keys, checks Sheet structure, recreates missing tabs, and logs a run summary to the Dashboard
 
 ---
 
-## Step 1 — Get Your OpenAI API Key
+## Cost: Under $10/Month
 
-The OpenAI API key lets your script call ChatGPT.
+| Component | Cost |
+|-----------|------|
+| OpenAI API (gpt-4o, 15 prompts every 2 days) | ~$1–3/month |
+| Google Custom Search API | Free (100 queries/day free tier) |
+| Google Sheets API | Free |
+| GitHub Actions scheduling | Free (within free tier) |
+| **Total** | **Under $10/month** |
 
-1. Go to **https://platform.openai.com/api-keys**
-2. Sign in with your OpenAI account
-3. Click the button **"Create new secret key"** (blue button, may have a `+` symbol)
-4. Give it a name — for example, `ACKO Tracker`
-5. Click **Create**
-6. You will see a long string starting with **`sk-`** — this is your API key
-   - **Copy it immediately and save it somewhere safe** (a private note or password manager)
-   - You will never be able to see it again after closing this window
-7. Make sure billing is enabled:
-   - Go to **https://platform.openai.com/account/billing**
-   - Add a payment method and add at least $5 credit
-   - GPT-4o costs roughly $0.005 per prompt — 15 prompts every 2 days is less than $1/month
+Compare to commercial alternatives: Profound AI and Peec AI charge ₹50,000–₹2,00,000/month for equivalent LLM visibility tracking.
 
 ---
 
-## Step 2 — Get Your Gemini API Key (Free)
+## Architecture
 
-The Gemini API lets your script query Google's AI with live web search built in — the same technology behind Google AI Mode.
-
-1. Go to **https://aistudio.google.com/app/apikey**
-2. Sign in with your Google account
-3. Click the blue **"Create API key"** button
-4. In the dropdown, choose **"Create API key in new project"** (easiest option)
-5. Your API key appears on screen — a long string of random letters and numbers
-6. **Click the copy icon next to it** and save it somewhere safe
-
-No billing needed. The free tier covers this tracker entirely:
-- **Free limit:** 1,500 requests per day
-- **This tracker uses:** ~8 requests per day
-- **Your cost:** $0
-
----
-
-## Step 3 — Set Up Google Sheets Access (Service Account)
-
-A "service account" is like a robot Google account that your script uses to write data to your spreadsheet automatically. You create it once and never touch it again.
-
-### Part A: Go to Google Cloud Console and Create a Project
-
-1. Go to **https://console.cloud.google.com/**
-2. Sign in with your Google account
-3. At the very top of the page, click the project dropdown — it may say **"Select a project"** or show a project name
-4. A window pops up. Click **"New Project"** (top right of the popup)
-5. Under "Project name", type `acko-tracker` — then click **"Create"**
-6. Wait a few seconds. When it finishes, click the notification or select the new project from the dropdown at the top
-
-### Part B: Enable the Required APIs
-
-You need to switch on two Google services for this project.
-
-1. In the left sidebar, click **"APIs & Services"** → **"Library"**
-2. In the search box, type `Google Sheets API`
-3. Click the result, then click the blue **"Enable"** button
-4. Go back to the Library (click the back arrow or click "Library" in the sidebar again)
-5. Search for `Google Drive API`
-6. Click the result, then click **"Enable"**
-
-### Part C: Create a Service Account
-
-1. In the left sidebar, click **"IAM & Admin"** → **"Service Accounts"**
-2. Click **"+ Create Service Account"** at the top
-3. Fill in:
-   - **Service account name:** `acko-tracker`
-   - The **Service account ID** fills in automatically — leave it as is
-4. Click **"Create and Continue"**
-5. On the next screen ("Grant this service account access"), click **"Continue"** — you can skip this
-6. On the final screen, click **"Done"**
-
-### Part D: Download the Key File
-
-1. You will now see your service account listed. Click on its **email address** — it looks like `acko-tracker@acko-tracker-xxxxx.iam.gserviceaccount.com`
-2. **Copy this email address** and save it — you will need it in Step 4
-3. Click the **"Keys"** tab at the top of the page
-4. Click **"Add Key"** → **"Create new key"**
-5. Select **"JSON"** and click **"Create"**
-6. A file downloads automatically to your computer — named something like `acko-tracker-abc123.json`
-7. Open this file with **Notepad** (Windows) or **TextEdit** (Mac)
-   - It looks like a wall of text starting with `{` and ending with `}`
-8. Press **Ctrl+A** (Windows) or **Cmd+A** (Mac) to select everything, then **Ctrl+C** / **Cmd+C** to copy it
-9. **Save this copied text** — you will paste it into GitHub in Step 6
+```
+main.py (orchestrator)
+|
++-- Phase 1: Pre-flight checks
+|   +-- Validate all GitHub Secrets are present
+|   +-- Ping OpenAI and Google APIs with test calls
+|   +-- Verify Google Sheet exists and all 5 tabs are intact (recreate if missing)
+|
++-- Phase 2: Query ChatGPT
+|   +-- chatgpt_client.py sends all 15 prompts to gpt-4o, captures full responses
+|
++-- Phase 3: Query Google AI Mode
+|   +-- google_client.py calls Custom Search API, extracts AI Overview snippets
+|
++-- Phase 4: Brand Detection
+|   +-- brand_detector.py scans each response for 15 tracked brands + any unlisted brands
+|       +-- Records position of first mention per brand
+|       +-- Scores ACKO sentiment (Positive / Neutral / Negative) via keyword check
+|       +-- Flags any brand not in the tracked list
+|
++-- Phase 5: Change Detection
+|   +-- sheets_client.py reads previous run data and diffs against current run
+|       +-- Logs what changed: new brand appeared, ACKO dropped out, position shifted
+|
++-- Phase 6: Write to Google Sheets
+    +-- Tab 1 Raw Data: appends all rows from this run
+    +-- Tab 2 ACKO Visibility Summary: updates mention rate per prompt
+    +-- Tab 3 Brand Leaderboard: re-ranks all brands by total mentions + trend
+    +-- Tab 4 Change Log: appends only rows where something changed
+    +-- Tab 5 Dashboard: writes run summary block + key metrics for executive view
+```
 
 ---
 
-## Step 4 — Create and Share Your Google Sheet
+## Google Sheets Dashboard Structure
 
-1. Go to **https://sheets.google.com**
-2. Click the large **"+"** button to create a new blank spreadsheet
-3. Click "Untitled spreadsheet" at the top and rename it to `ACKO Brand Visibility Tracker`
-4. Look at the URL in your browser — it looks like this:
-   ```
-   https://docs.google.com/spreadsheets/d/LONG_ID_HERE/edit
-   ```
-   **Copy the `LONG_ID_HERE` part** — this is your Spreadsheet ID (save it safely)
-5. Click the **"Share"** button (blue button, top right)
-6. In the **"Add people and groups"** box, paste the service account email you copied in Step 3 Part D
-7. Make sure the permission dropdown shows **"Editor"**
-8. Click **"Send"** — if it warns that no email will be sent, that is fine, click OK
+| Tab | What It Contains |
+|-----|-----------------|
+| **Raw Data** | Every data point from every run, appended as new rows |
+| **ACKO Visibility Summary** | ACKO mention rate per prompt across all runs and platforms |
+| **Brand Leaderboard** | All 15+ brands ranked by total mentions, with Up/Down/Same trend vs previous run |
+| **Change Log** | Only the rows where something changed since the last run |
+| **Dashboard** | Executive summary: ACKO overall mention rate, rank among competitors, top 3 rivals, run history |
 
-The script will automatically create all 5 tabs the first time it runs. You do not need to create them manually.
+The Dashboard tab is auto-formatted via the Sheets API: bold headers, colour-coded ACKO rows, frozen header rows, and a run summary block at the top showing timestamp, platforms queried, errors encountered, and any auto-fixes applied.
 
 ---
 
-## Step 5 — Create a GitHub Repository and Upload the Files
+## The 15 Prompts Being Tracked
 
-### Part A: Create a GitHub Account (if you don't have one)
-
-1. Go to **https://github.com/signup**
-2. Enter your email, create a password, and choose a username
-3. Verify your email address when GitHub sends you a confirmation email
-4. On the "Welcome" screen, you can skip the personalisation questions — just click "Skip personalisation" or "Continue"
-
-### Part B: Create a New Repository
-
-A repository is a folder on GitHub that holds all your project files.
-
-1. Once logged in, click the **"+"** icon in the top right corner of GitHub
-2. Click **"New repository"**
-3. Fill in:
-   - **Repository name:** `acko-brand-tracker`
-   - **Description:** (optional) `ACKO brand visibility tracker`
-   - **Visibility:** Select **"Private"** — this keeps your code and file structure private
-4. **Do not tick** any of the initialisation checkboxes (no README, no .gitignore, no licence)
-5. Click the green **"Create repository"** button
-
-You will land on an empty repository page.
-
-### Part C: Upload the Main Project Files
-
-1. On the empty repository page, click the link that says **"uploading an existing file"**
-   - If you don't see it, click **"Add file"** → **"Upload files"**
-2. Open the `acko-brand-tracker` folder on your computer
-3. Select and drag these 7 files into the upload area on GitHub:
-   - `main.py`
-   - `config.py`
-   - `brand_detector.py`
-   - `chatgpt_client.py`
-   - `google_client.py`
-   - `sheets_client.py`
-   - `requirements.txt`
-   - `README.md`
-4. At the bottom of the page, leave the commit message as is and click **"Commit changes"**
-
-### Part D: Upload the Workflow File (This Is the Key Step for Automation)
-
-The file `.github/workflows/tracker.yml` is what tells GitHub Actions to run your script automatically. It must be placed in a specific folder path — you cannot just drag and drop it like the others.
-
-1. On your repository page, click **"Add file"** → **"Create new file"**
-2. In the filename box at the top, type exactly:
-   ```
-   .github/workflows/tracker.yml
-   ```
-   As you type the `/` characters, GitHub will automatically create the folder structure — you will see `.github /` and `workflows /` appear as folder "breadcrumbs" above the box. This is correct.
-3. Now open the `tracker.yml` file from your computer with Notepad (Windows) or TextEdit (Mac)
-4. Select all the text (**Ctrl+A** then **Ctrl+C** on Windows, or **Cmd+A** then **Cmd+C** on Mac)
-5. Click inside the large text area on GitHub and paste (**Ctrl+V** or **Cmd+V**)
-6. Scroll down and click **"Commit new file"**
-
-### Part E: Verify the Upload Worked
-
-1. Click the **"Actions"** tab in the top navigation bar of your repository
-2. You should see a workflow listed called **"ACKO Brand Visibility Tracker"**
-   - If you see it: ✓ the workflow file was uploaded correctly
-   - If the Actions tab says "Get started with GitHub Actions" with no workflow listed: the `.github/workflows/tracker.yml` file was not uploaded correctly — go back to Part D and try again
+| # | Prompt |
+|---|--------|
+| 1 | What are the best car insurance companies in India for a budget of Rs 10,000? |
+| 2 | Which car insurance providers in India offer the best value for money right now? |
+| 3 | Top 5 car insurance companies in India with the highest claim settlement ratio? |
+| 4 | Which insurers are known for the fastest car insurance claim settlement in India? |
+| 5 | Compare ACKO, ICICI Lombard, and HDFC ERGO car insurance: which one should I choose? |
+| 6 | Which is better for car insurance in India: ACKO or Digit or Tata AIG? |
+| 7 | Policybazaar vs ACKO vs direct insurer websites: where should I buy car insurance? |
+| 8 | Which car insurance company is best for my 3-year-old hatchback in India? |
+| 9 | Suggest the best car insurance providers for a new car with full coverage and add-ons. |
+| 10 | Which insurers are ideal for low premium but good coverage for car insurance in India? |
+| 11 | Which car insurance companies offer the best zero depreciation and engine protection add-ons? |
+| 12 | Which insurers in India have the widest cashless garage network for car insurance? |
+| 13 | If I want to switch my car insurance provider, which companies should I consider in India? |
+| 14 | Which car insurance companies give the best renewal offers or NCB benefits? |
+| 15 | Which platform or insurer gives the cheapest comprehensive car insurance instantly in India? |
 
 ---
 
-## Step 6 — Add Your API Keys as GitHub Secrets
+## Brands Being Tracked
 
-GitHub Secrets store your API keys safely. They are encrypted and never visible in your code or run logs — not even to you after you save them.
+ACKO · ICICI Lombard · HDFC ERGO · Bajaj Allianz · Tata AIG · Digit Insurance · New India Assurance · Policybazaar · Coverfox · Reliance General · Navi · Go Digit · SBI General · Royal Sundaram · Kotak Mahindra General
 
-1. Go to your repository page on GitHub
-2. Click **"Settings"** in the top navigation bar (last item, with a gear icon)
-3. In the left sidebar, scroll down to **"Security"** and click **"Secrets and variables"**
-4. Click **"Actions"** in the submenu
-5. You will see a section called **"Repository secrets"** — click the green **"New repository secret"** button
-
-Add each of the following secrets one at a time:
-
-| Secret Name | What to paste | Where you got it |
-|---|---|---|
-| `OPENAI_API_KEY` | Your OpenAI key (starts with `sk-`) | Step 1 |
-| `GEMINI_API_KEY` | Your Gemini API key | Step 2 |
-| `GOOGLE_SHEETS_CREDENTIALS` | The entire contents of your JSON key file | Step 3 Part D |
-| `SPREADSHEET_ID` | The long ID from your Google Sheet URL | Step 4 |
-
-For each secret:
-1. Click **"New repository secret"**
-2. In the **"Name"** box, type the secret name exactly as shown above — capital letters, underscores, no spaces
-3. In the **"Secret"** box, paste the value
-4. Click **"Add secret"**
-
-When done, you should see all 4 secrets listed under "Repository secrets".
+Any brand that appears in an AI response but is not in this list is automatically flagged as an unlisted brand and logged separately.
 
 ---
 
-## Step 7 — Run It for the First Time
+## Data Captured Per Run
 
-Before the automation runs on its own schedule, do a manual test to confirm everything is connected correctly.
+For every prompt x platform combination:
 
-1. Go to your repository on GitHub
-2. Click the **"Actions"** tab
-3. In the left sidebar, click **"ACKO Brand Visibility Tracker"**
-4. On the right side, click the grey **"Run workflow"** button
-5. A small dropdown appears. You will see:
-   - A branch selector (leave it as `main`)
-   - **"Run in self-test mode?"** — change this to `true`
-6. Click the green **"Run workflow"** button
-7. The page will refresh and show a new run with a **yellow circle** (meaning it is running)
-8. Click on the run to watch it live
-9. It takes 1–2 minutes. When it finishes:
-   - **Green tick (✓)** = everything worked
-   - **Red X (✗)** = something failed — click on the failed step to see the error message, then check "Common Problems" below
-
-### What to check after a successful test run
-
-Open your Google Sheet. You should now see:
-- A tab called **"Raw Data"** with 2 rows of data (1 prompt tested on 2 platforms)
-- A tab called **"Dashboard"** with a run summary at the top
-- Tabs called "ACKO Visibility Summary", "Brand Leaderboard", and "Change Log" (they may be empty or have headers only — that is normal at this stage)
-
-If you see this, your setup is complete. The full 15-prompt run will happen automatically every 2 days.
+| Field | Description |
+|-------|-------------|
+| Run Date & Time | Timestamp of the query |
+| Platform | ChatGPT or Google AI Mode |
+| ACKO Mentioned | Yes / No |
+| ACKO Position | 1st mention, 2nd mention, not mentioned |
+| ACKO Sentiment | Positive / Neutral / Negative |
+| All Brands Mentioned | In order of first appearance |
+| Brand Count | Total tracked brands in that response |
+| Unlisted Brands | Any insurance brand not in the tracking list |
+| Change Detected | Yes / No vs the previous run |
+| Change Details | What specifically changed |
+| Full Response Text | Complete AI-generated answer |
 
 ---
 
-## How to Check If Your Automation Is Running
+## Key Design Decisions
 
-1. Go to your GitHub repository
-2. Click the **"Actions"** tab
-3. You will see a list of every run — scheduled and manual. Each has:
-   - **Green tick (✓)** — completed successfully
-   - **Red X (✗)** — failed; click to see what went wrong
-   - **Yellow circle** — currently running
-4. Click any run, then click the **"track-visibility"** job inside it
-5. Click **"Run brand visibility tracker"** to expand the full log
-6. A successful run ends with something like:
-   ```
-   ═════════════════════════════════════════════════════════════════
-   RUN COMPLETE
-     Timestamp         : 2026-04-01 02:31:00 UTC
-     Rows processed    : 30 / 30 expected
-     Errors            : 0
-     Changes detected  : 3
-     Sheet updated     : Yes
-     Auto-fixes        : None
-   ═════════════════════════════════════════════════════════════════
-   ```
+**Self-healing runs over fragile automation**
+Every run starts with a pre-flight check that validates API connectivity and Sheet structure before any queries are made. If a tab is missing from the Sheet, it is recreated automatically. If one API is down, that platform is skipped for that run and the rest continues. The run never crashes completely because of a single failure.
 
-**When does it run automatically?**
-Every 2 days at approximately 8:00 AM India Standard Time (2:30 AM UTC). GitHub may delay scheduled runs by up to 15 minutes during busy periods — this is normal.
+**Change detection as the core signal**
+Raw mention counts are useful but change detection is what a content team actually acts on. The pipeline diffs every response against the previous run for the same prompt and platform, so stakeholders see immediately when ACKO drops out of a response or a new competitor appears.
+
+**Sentiment scoring without an extra LLM call**
+Rather than making an additional API call for sentiment analysis, brand_detector.py uses a keyword dictionary approach: positive signals (recommended, best, top, leading), negative signals (expensive, complaint, slow, rejected), and neutral as the default. This keeps costs low and the logic fully auditable.
+
+**Unlisted brand detection**
+The pipeline does not only track the 15 defined brands. It also scans for any insurance-adjacent brand name it does not recognise and flags it. This surfaces emerging competitors or aggregators that were not on the radar when the tracker was first built.
+
+**Dashboard formatted for non-technical stakeholders**
+The Sheets API writes formatting directly: bold headers, frozen rows, ACKO rows highlighted, and a plain-English run summary at the top of the Dashboard tab. The goal is a sheet that can be shared with a CMO or CFO without any manual cleanup.
 
 ---
 
-## How to Read the Dashboard
+## Tech Stack
 
-Open your Google Sheet and click the **"Dashboard"** tab.
-
-- **THIS RUN** — when the last run happened, how many prompts were processed, errors, and whether any auto-fixes were applied
-- **ALL-TIME KEY METRICS:**
-  - **ACKO overall mention rate** — across all runs and platforms, what % of responses mentioned ACKO
-  - **ACKO rank among all brands** — rank 1 = most mentioned; rank 5 = 4 brands mentioned more often
-  - **Top 3 competitors** — the brands appearing most often across all responses (excluding ACKO)
-  - **Prompts where ACKO never mentioned** — how many of the 15 prompts have produced zero ACKO mentions across all runs
-- **BRAND MENTION COUNTS (TOP 10)** — quick leaderboard; ACKO's row is highlighted in amber
-
-Other tabs:
-- **Raw Data** — every single data point, every run, every platform
-- **ACKO Visibility Summary** — per-prompt ACKO mention rates broken down by platform
-- **Brand Leaderboard** — all 15 brands ranked by total mentions, with trend arrows
-- **Change Log** — only rows where something changed vs the prior run
+| Component | Technology |
+|-----------|-----------|
+| Orchestration | Python 3.12 |
+| ChatGPT queries | OpenAI API (gpt-4o) |
+| Google AI Mode queries | Google Custom Search JSON API |
+| Brand detection | Python (regex + keyword dictionary) |
+| Dashboard output | Google Sheets API v4 |
+| Scheduling | GitHub Actions (cron, every 2 days) |
+| Secrets management | GitHub Actions Secrets |
 
 ---
 
-## What Happens If Something Breaks?
+## Project Structure
 
-The system is built to recover automatically from the most common problems.
-
-**If one API call fails mid-run:**
-The error is logged and the script moves on to the next prompt. One failure never stops the rest of the run. The error message appears in the "Run Errors" column of the Raw Data tab.
-
-**If a Google Sheet tab is accidentally deleted:**
-The script detects this at the start of the next run and recreates the missing tab with the correct headers automatically.
-
-**If Google Sheets is completely unreachable:**
-The script saves all the data to a file called `run_output_fallback.json`. You can download this from the "Artifacts" section at the bottom of the Actions run page — it stays available for 30 days.
-
-**The run summary on the Dashboard tab tells you:**
-- How many errors occurred
-- Which platforms were queried
-- Whether any automatic fixes were applied that run
-
-**The only two situations where you need to step in manually:**
-
-1. **An API key expired or ran out of credit** — the system cannot renew keys for you. See Common Problems below.
-2. **The Google Sheet was deleted or your service account lost Editor access** — re-share the sheet from Step 4, or create a new one.
+```
+acko-brand-tracker/
++-- main.py                    # Pipeline orchestrator
++-- chatgpt_client.py          # OpenAI API integration
++-- google_client.py           # Google Custom Search API integration
++-- sheets_client.py           # Google Sheets read/write + formatting
++-- brand_detector.py          # Brand detection, position, sentiment logic
++-- config.py                  # All 15 prompts and the brand tracking list
++-- requirements.txt           # Python dependencies
++-- .github/
+|   +-- workflows/
+|       +-- tracker.yml        # GitHub Actions schedule (every 2 days, 8 AM IST)
++-- README.md
+```
 
 ---
 
-## Common Problems
+## Setup Prerequisites
 
-### Problem 1: "401 Unauthorized" or "invalid_api_key" for ChatGPT
-
-**What it means:** Your OpenAI API key is wrong or has expired.
-
-**How to fix it:**
-1. Go to **https://platform.openai.com/api-keys**
-2. Check if your key is listed and active
-3. If not, click **"Create new secret key"**, copy the new key (starts with `sk-`)
-4. Go to GitHub → your repo → Settings → Secrets and variables → Actions
-5. Find **OPENAI_API_KEY**, click **"Update"**, paste the new key, click **"Update secret"**
-
-### Problem 2: "Invalid API key" or "API_KEY_INVALID" for Gemini
-
-**What it means:** Your Gemini API key is wrong or has been deleted.
-
-**How to fix it:**
-1. Go to **https://aistudio.google.com/app/apikey**
-2. Check if your key is listed — if so, copy it again
-3. If missing, click **"Create API key"** to generate a new one
-4. Go to GitHub → your repo → Settings → Secrets and variables → Actions
-5. Find **GEMINI_API_KEY**, click **"Update"**, paste the new key, click **"Update secret"**
-
-### Problem 3: "GOOGLE_SHEETS_CREDENTIALS is not valid JSON"
-
-**What it means:** The service account key file was pasted incompletely or got garbled.
-
-**How to fix it:**
-1. Find the JSON file you downloaded in Step 3 Part D (named something like `acko-tracker-abc123.json`)
-2. Open it with Notepad (Windows) or TextEdit (Mac)
-3. Press **Ctrl+A** then **Ctrl+C** (Windows) or **Cmd+A** then **Cmd+C** (Mac) to copy everything
-4. Go to GitHub → Settings → Secrets → find **GOOGLE_SHEETS_CREDENTIALS** → click **"Update"**
-5. Click inside the secret box, press **Ctrl+A** to select everything already there, then paste with **Ctrl+V**
-6. Click **"Update secret"**
-
-### Problem 4: The run completes but the Google Sheet is empty
-
-**What it means:** The script cannot find your spreadsheet. Either the ID is wrong, or the service account was not given Editor access.
-
-**How to fix it:**
-1. Open your Google Sheet in a browser
-2. Look at the URL: `https://docs.google.com/spreadsheets/d/THIS_IS_THE_ID/edit`
-3. Copy `THIS_IS_THE_ID` exactly
-4. Update the **SPREADSHEET_ID** GitHub Secret with this value
-5. Also check: click **"Share"** on the sheet and confirm the service account email (ending in `@...iam.gserviceaccount.com`) is listed as an **Editor**
-
-### Problem 5: The Actions tab shows no workflow / says "Get started with GitHub Actions"
-
-**What it means:** The `tracker.yml` file was not uploaded to the correct folder path.
-
-**How to fix it:**
-1. In your repository, click the **"Code"** tab
-2. Look for a folder called `.github` — click into it, then into `workflows`
-3. If the folder or file is missing:
-   - Click **"Add file"** → **"Create new file"**
-   - In the filename box, type `.github/workflows/tracker.yml` (the folders create automatically as you type)
-   - Open `tracker.yml` from your computer with Notepad, copy all the text, and paste it into the editor
-   - Click **"Commit new file"**
-4. Go back to the **"Actions"** tab — the workflow should now appear
+- Python 3.12+
+- A GitHub account (free)
+- An OpenAI account with API credit loaded ($5 covers months of use at this query volume)
+- A Google Cloud project with the Custom Search API, Sheets API, and Drive API enabled
+- A Google Sheet created in your Drive (blank is fine: the script builds all tabs on first run)
 
 ---
 
-## Glossary
+## Setup Guide
 
-**API key** — A long string of random characters, like a password, that proves to an online service that you have permission to use it. Keep it private and never share it.
+### Step 1: Get Your OpenAI API Key
 
-**Service account** — A special Google account designed for programs (not people) to use. It has its own email address and can be given access to Google Sheets, just like sharing with a regular person.
-
-**GitHub** — A website that stores code. Think of it like Google Drive, but specifically for code files, with version history.
-
-**GitHub Actions** — A feature of GitHub that runs your code automatically on a schedule, using a temporary computer in the cloud. You never have to press "run" yourself.
-
-**Repository** — A project folder stored on GitHub, containing all your files and their full history of changes.
-
-**GitHub Secret** — An encrypted value stored in GitHub (like an API key) that gets passed to your script when it runs. It is never visible in logs or code.
-
-**Workflow file** — The `.github/workflows/tracker.yml` file that tells GitHub Actions what to do and when to do it.
-
-**Cron schedule** — A coded way to specify a repeating time schedule. `30 2 */2 * *` means "2:30 AM, every 2 days" — you do not need to understand the syntax, it is already configured for you.
-
-**JSON file** — A text file that stores structured data using curly braces `{}` and colons `:`. Your Google service account credentials file is a JSON file.
-
-**Environment variable** — A value passed to a program from the outside environment (like an API key injected at runtime), rather than written directly into the code.
-
-**Search grounding** — A Gemini feature that makes the AI search the web in real time before generating its answer, so responses reflect current information rather than just training data.
+1. Go to **https://platform.openai.com** and sign in
+2. Click your profile icon (top right) and select **API keys**
+3. Click **+ Create new secret key**, give it a name, and click **Create**
+4. Copy the key immediately (starts with `sk-`): you cannot view it again after closing this screen
+5. Add credits: click **Billing** in the left menu, then **Add payment method**
 
 ---
 
-*Built with Python · OpenAI API · Google Gemini API · Google Sheets API · GitHub Actions*
+### Step 2: Get Your Google Custom Search API Key and Search Engine ID
+
+**Create a Programmable Search Engine:**
+1. Go to **https://programmablesearchengine.google.com** and click **Add**
+2. Select **Search the entire web** and give it any name
+3. After creation, copy the **Search Engine ID** shown on screen
+
+**Enable the API and create a key:**
+1. Go to **https://console.cloud.google.com**
+2. Search for **Custom Search API** and click **Enable**
+3. Go to **Credentials**, click **+ Create Credentials**, select **API Key**, and copy the key
+
+---
+
+### Step 3: Set Up Google Sheets Access via Service Account
+
+1. In Google Cloud Console, enable the **Google Sheets API** and **Google Drive API**
+2. Go to **Credentials**, click **+ Create Credentials**, and select **Service account**
+3. Give it any name, click through, and click **Done**
+4. Click the service account email, go to the **Keys** tab, click **Add Key**, select **JSON**, and download the file
+5. Open your Google Sheet, click **Share**, paste the service account email address, and give it **Editor** access
+
+---
+
+### Step 4: Add GitHub Secrets
+
+In your repository: **Settings** > **Secrets and variables** > **Actions** > **New repository secret**
+
+| Secret Name | Value |
+|-------------|-------|
+| `OPENAI_API_KEY` | Your OpenAI key (starts with `sk-`) |
+| `GOOGLE_API_KEY` | Your Google Custom Search API key |
+| `GOOGLE_CSE_ID` | Your Search Engine ID |
+| `GOOGLE_SHEETS_CREDENTIALS` | Full contents of the JSON file from Step 3 (open in Notepad, copy all, paste) |
+| `GOOGLE_SHEET_ID` | The string between `/d/` and `/edit` in your Google Sheet URL |
+
+---
+
+### Step 5: Run It
+
+```bash
+# Clone the repo
+git clone https://github.com/tanweer4u/acko-brand-tracker
+cd acko-brand-tracker
+pip install -r requirements.txt
+
+# Set your API key locally for testing
+export OPENAI_API_KEY=your_key_here
+
+# Run the full pipeline
+python main.py
+
+# Run a single test prompt only (faster for initial setup check)
+python main.py --test
+```
+
+Or trigger it manually from the **Actions** tab in GitHub: click the workflow and select **Run workflow**.
+
+---
+
+## What Happens If Something Breaks
+
+The pipeline is designed to self-diagnose and recover. Before every run it checks API connectivity and Sheet structure. During every run, a failed API call is logged and skipped rather than crashing the whole job. After every run, a plain-English summary is written to the Dashboard tab.
+
+**The two situations that require manual intervention:**
+
+1. **API key expired or out of credit**: the Dashboard will show "401 Unauthorized". Generate a new key on the relevant platform and update the GitHub Secret.
+2. **Google Sheet access revoked**: the Dashboard will show "403 Forbidden". Re-share the Sheet with the service account email and give it Editor access.
+
+---
+
+## Methodology and Limitations
+
+**ChatGPT** responses are fetched via the OpenAI API using `gpt-4o`. These are fresh, real responses generated at query time, not cached.
+
+**Google AI Mode** responses are fetched via the Google Custom Search JSON API. This returns AI Overview snippets when available, but the API does not guarantee an AI Overview for every query. When unavailable, the run logs "AI Overview not available" for that entry. This is a known tradeoff of the API-based approach vs full browser automation: it keeps costs near zero but means Google coverage is best-effort rather than guaranteed.
+
+---
+
+## Skills Demonstrated
+
+- **Agentic pipeline design**: multi-phase orchestration with pre-flight checks, per-phase error handling, and a self-healing run loop
+- **Multi-API integration**: OpenAI, Google Custom Search, Google Sheets, and Google Drive coordinated in a single automated workflow
+- **Scheduled automation**: GitHub Actions cron job with manual trigger override, secrets management, and structured run logging
+- **GEO/AEO measurement**: practical implementation of LLM brand visibility tracking, change detection, and sentiment scoring without expensive third-party tools
+- **Stakeholder-ready output**: Google Sheets dashboard formatted programmatically for executive readability, including conditional formatting, frozen headers, and plain-English run summaries
+
+---
+
+## About
+
+Built by **Tanveer** | Senior Content and SEO Leader with 12 years of experience in Indian fintech and insurance, including scaling organic traffic to 22M monthly visits at BankBazaar and leading GEO/AEO content strategy at ACKO Insurance.
+
+Most businesses investing in GEO/AEO have no affordable way to measure whether their strategy is working inside AI responses. This project builds that measurement layer from scratch, adaptable to any brand, category, or set of queries. The insurance use case here is one implementation of a framework that works for any business tracking its LLM visibility without paying for expensive external tools.
+
+**Connect:** [LinkedIn](https://www.linkedin.com/in/12195249/) · [GitHub](https://github.com/tanweer4u)
