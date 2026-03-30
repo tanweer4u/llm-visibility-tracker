@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+*.json
+run_output_fallback.json
+.env
