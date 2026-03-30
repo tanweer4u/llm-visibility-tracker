@@ -171,7 +171,7 @@ The Sheets API writes formatting directly: bold headers, frozen rows, ACKO rows 
 ## Project Structure
 
 ```
-acko-brand-tracker/
+llm-visibility-tracker/
 +-- main.py                    # Pipeline orchestrator
 +-- chatgpt_client.py          # OpenAI API integration
 +-- google_client.py           # Google Custom Search API integration
@@ -251,8 +251,8 @@ In your repository: **Settings** > **Secrets and variables** > **Actions** > **N
 
 ```bash
 # Clone the repo
-git clone https://github.com/tanweer4u/acko-brand-tracker
-cd acko-brand-tracker
+git clone https://github.com/tanweer4u/llm-visibility-tracker
+cd llm-visibility-tracker
 pip install -r requirements.txt
 
 # Set your API key locally for testing
